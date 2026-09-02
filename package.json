@@ -1,0 +1,19 @@
+{
+  "name": "sansumoku",
+  "version": "1.0.0",
+  "description": "Sansumoku — a mash-up of Sudoku and Ultimate Tic-Tac-Toe. Browser port of the iOS game.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test \".build/test/**/*.test.js\"",
+    "playoff": "tsc -p tsconfig.test.json && node .build/test/playoff.js",
+    "bench": "tsc -p tsconfig.test.json && node .build/test/bench.js",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "typescript": "^5.7.2"
+  }
+}
