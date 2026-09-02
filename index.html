@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sansumoku</title>
+    <meta
+      name="description"
+      content="Sansumoku — a two-player board game mixing Sudoku with Ultimate Tic-Tac-Toe."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Sansumoku</h1>
+      <a href="rules.html">How to play</a>
+    </header>
+
+    <main>
+      <canvas id="board" width="540" height="540" aria-label="Sansumoku board"></canvas>
+      <p id="status" role="status">Loading…</p>
+
+      <div class="controls">
+        <label>
+          You play
+          <select id="mode">
+            <option value="blue">Blue</option>
+            <option value="orange">Orange</option>
+            <option value="both">Both sides</option>
+          </select>
+        </label>
+        <label>
+          Computer level
+          <select id="level"></select>
+        </label>
+        <button id="new-game" type="button">New game</button>
+        <button id="undo" type="button">Undo</button>
+      </div>
+    </main>
+
+    <footer>
+      <p>
+        Blue moves first. The digit is chosen for you — each section hands out 1 to 9 in order.
+        Three of your cells in a row wins a section; three sections in a row wins the game.
+      </p>
+    </footer>
+
+    <script type="module" src="dist/ui/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,53 @@
+/* The original stylesheet sets 40px body text, sized for a phone web view around
+   540px-wide screenshots. On a desktop that is enormous, so the rules page keeps
+   the site's type scale and just gives the prose a readable measure. */
+
+body.rules {
+  align-items: flex-start;
+  padding: 24px max(16px, calc(50vw - 340px));
+}
+
+body.rules header,
+body.rules footer,
+article {
+  width: 100%;
+  max-width: 640px;
+}
+
+article {
+  font-size: 1.0625rem;
+}
+
+article p {
+  margin: 0 0 1.25em;
+}
+
+article h2 {
+  margin: 2em 0 0.75em;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+article em {
+  font-style: normal;
+  font-weight: 600;
+}
+
+p.shot {
+  margin: 1.5em 0 2em;
+  text-align: center;
+}
+
+p.shot img {
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+}
+
+body.rules footer {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid var(--edge);
+}

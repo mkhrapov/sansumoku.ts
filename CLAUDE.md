@@ -2,33 +2,50 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status
+## What this is
 
-This repository is empty apart from `README.md`. It is a planned TypeScript port of Sansumoku, an
-iOS board game written in Swift and C/C++. No source, package manifest, build system, or test runner
-exists yet — do not assume a toolchain. When one is chosen, record the build/lint/test commands here.
+A browser port of Sansumoku, originally an iOS game in Swift and C/C++. It is a static site: no
+backend, no persistence, all computation client-side. TypeScript is compiled locally with `tsc` and
+the output is uploaded to a static host.
+
+## Commands
+
+```bash
+npm install          # typescript and @types/node, both dev-only
+npm run build        # src/ -> dist/, what you upload
+npm run typecheck    # tsc --noEmit
+npm test             # rule, regression and engine tests (node --test)
+npm run playoff      # engine-vs-engine ladder, ~1 min; takes a game count: -- 60
+npm run bench        # playouts/sec, for setting difficulty budgets
+npm run serve        # python3 -m http.server 8000
+```
+
+Run one test file: `npx tsc -p tsconfig.test.json && node --test .build/test/regression.test.js`.
+
+Deploy by uploading `index.html`, `rules.html`, `styles.css`, `rules.css`, `assets/` and `dist/`.
+Nothing else is needed at runtime; `.build/` is tests only and never ships.
+
+Two tsconfigs: `tsconfig.json` builds `src/` to `dist/`, `tsconfig.test.json` builds `src/` and
+`test/` to `.build/`. Module resolution is `nodenext` with `"type": "module"`, so imports are written
+with explicit `.js` extensions and the emitted ES modules run unchanged in both the browser and Node.
 
 ## Reference implementation
 
-The original lives in a sibling checkout at `~/Developer/sansumoku` (GitHub: `mkhrapov/sansumoku`,
-Apache 2.0). It is the authority on game rules and engine behavior; read it before porting anything.
+The original is a sibling checkout at `~/Developer/sansumoku` (GitHub: `mkhrapov/sansumoku`,
+Apache 2.0, same author). It remains the authority on game rules. `Sansumoku/BoardState.swift` is the
+rules, `Sansumoku/BoardView.swift` the rendering, `SansumokuTests/` the tests this repo's
+`test/regression.test.ts` and `test/playoff.ts` come from, and `Sansumoku/www/how_to_play.html` the
+source of `rules.html`.
 
-| Original | Purpose |
-| --- | --- |
-| `Sansumoku/BoardState.swift` | All game logic. The canonical thing to port first. |
-| `Sansumoku/BoardStateInt8.swift` | Packed `Int8` mirror of `BoardState`, used to cross the Swift/C boundary. |
-| `Sansumoku/SwiftGameEngines/` | `AIEngine` protocol plus the Swift engines (random, basic, GameplayKit `GKMonteCarloStrategist`, pure-Swift MCTS) and the `CppConnector` bridge. |
-| `Sansumoku/CFiles/`, `Sansumoku/CppGameEngines/` | The C and C++ MCTS engines. |
-| `Sansumoku/BoardView.swift` | Core Graphics board rendering — the part with no direct TS analogue. |
-| `Sansumoku/www/how_to_play.html` | Illustrated rules, the best prose spec of the game. |
-| `SansumokuTests/EngineCompetition.swift` | Engine-vs-engine playoff harness. |
+Deliberately not ported: `CppConnector`, `BoardStateInt8` and the bridging headers (a Swift/C
+marshalling layer with no purpose here), and `SwiftGKMCPlayer` (Apple's GameplayKit).
 
 ## Game model
 
-A 9x9 grid (81 cells) of nine 3x3 sections. Blue moves first, then Orange. Constants: `OPEN=0`,
-`BLUE=1`, `ORAN=2`, `DONE=3` (`DONE` means full-but-not-won for a section, or a draw for the game).
+A 9x9 grid (81 cells) of nine 3x3 sections. Blue moves first. Constants: `OPEN=0`, `BLUE=1`,
+`ORAN=2`, `DONE=3` (`DONE` means full-but-not-won for a section, or a draw for the game).
 
-Three rule systems compose, and porting any one in isolation will be wrong:
+Three rule systems compose in `src/core/boardState.ts`, and any one of them alone is wrong:
 
 1. **Ultimate Tic-Tac-Toe routing.** A move at `(x, y)` sends the opponent to section
    `3*(y%3) + (x%3)`; the mover's own section is `3*(y/3) + (x/3)`. If the target section is already
@@ -36,36 +53,55 @@ Three rule systems compose, and porting any one in isolation will be wrong:
 2. **Sudoku constraints on digits.** Each section has a `sectionNextValue` counter starting at 1 and
    incrementing per placement, so the digit played is forced by the section, not chosen. A cell is
    blocked if that digit already appears among its row/column peers. Sections already won by a player
-   have their cells removed from the peer set (`constraintRemoved`), so constraints shrink as the
-   game progresses — rows and columns are Sudoku groups but sections deliberately are not.
-3. **Three-in-a-row.** Three cells of one color aligned in a section win that section (digit values
-   are irrelevant to the win, only ownership); three sections aligned win the game.
+   have their cells removed from the peer set, so constraints shrink as the game progresses — rows
+   and columns are Sudoku groups but sections deliberately are not, because the 1..9 counter already
+   stops a section repeating a digit.
+3. **Three-in-a-row.** Three cells of one colour aligned in a section win that section (digit values
+   are irrelevant, only ownership); three sections aligned win the game.
 
 **Win by constraint** is the subtle rule. If the player to move has no legal cell at all, every
 currently-allowed section is awarded to the *previous* player and flagged in `sectionWonByConstraint`,
 after which the opponent may play in any open section. Awarding sections changes which peers are
-constrained, which can immediately produce another deadlock — hence `recursiveConstraintProcessing()`
-loops until a legal move exists or the game terminates. A non-recursive implementation is a known bug
-(noted in the original's test file); reproduce the recursion.
+constrained, which can immediately produce another deadlock, so this repeats until a legal move
+exists or the game terminates. Resolving it only once is a known bug in the original;
+`test/regression.test.ts` pins the position that exposed it and needs two rounds to settle. Run it
+before trusting any change to the rules.
 
 `BoardState.set()` is a mutating state machine: place the digit, evaluate section/game win, clear all
-`sectionAllowed`/`cellAllowed` flags, recompute them, run constraint processing, then flip `player`.
-The precomputed `cellAllowed`/`sectionAllowed` arrays are what the UI draws and what engines enumerate
-via `allLegalMoves()`, so they must be correct after every move, not merely on demand.
+`sectionAllowed`/`cellAllowed` flags, recompute them, resolve deadlock, then flip `player`. The
+precomputed `cellAllowed`/`sectionAllowed` arrays are what the UI draws and what engines enumerate,
+so they must be correct after every move, not merely on demand.
 
-## Engine architecture
+`src/core/tables.ts` holds `SECTION_LOCATIONS`, `WIN_TRIPLES` and `PEERS`, built once at load. The
+Swift original rebuilds all three per call, inside the innermost playout loop; this is most of why
+the port runs ~30k playouts/sec against the C engine's ~2k.
 
-Engines are interchangeable behind a one-method interface — `search() -> (x, y)` plus
-`setBoardState(_:)` — and are selected by an integer difficulty level (`AI.swift`). Search is
-Monte Carlo Tree Search throughout; there is no evaluation function, so engines depend on
-`BoardState.clone()` and fast random playouts. In the original, the pure-Swift MCTS was too slow for
-useful iteration counts, which is why the C and C++ engines and the `Int8` marshalling layer exist.
+## Engines
 
-For the TypeScript port, the Swift/C bridge (`CppConnector`, `BoardStateInt8`, the bridging headers,
-and the hand-unrolled tuple marshalling) is incidental complexity that should not be carried over.
-Keep the engine interface and the MCTS algorithm; pick a TS-appropriate performance strategy
-(typed arrays, WebAssembly) only if profiling shows it is needed.
+`src/engines/` — `AIEngine` is `search(board): number`, returning a cell index. `Budget` is
+`{ maxPlayouts?, maxMs? }`: the UI passes milliseconds, tests pass playouts so results are
+reproducible. Every engine takes a seedable `Rng` (`src/core/random.ts`).
 
-Correctness of engines is established by playing them against each other over many games rather than
-by unit assertions — port `EngineCompetition`'s playoff harness (alternating colors, tallying
-win/loss/draw) alongside the engines themselves.
+Levels come from `factory.ts`: 1 random, 2 one-ply basic, 3 flat Monte Carlo, 4 and 5 UCT at one and
+three seconds.
+
+Note the naming trap in the original: `MonteCarloTreeSearch.swift`, `monte_carlo_tree_search.c` and
+`advanced_mcts.cpp` contain **no tree search**. All three are flat Monte Carlo — every root move gets
+N uniform random playouts, scores accumulate 1.0 win / 0.05 draw / 0.0 loss, argmax wins.
+`flatMonteCarlo.ts` is the faithful port of that. `uct.ts` is new: real MCTS with UCB1 selection, and
+it beats flat Monte Carlo about 3:1 on decided games at an equal playout budget.
+
+Engine correctness is established by playing engines against each other, not by unit assertions —
+`npm run playoff` must keep the ladder ordered 5 > 4 > 3 > 2 > 1.
+
+## UI
+
+`src/ui/boardView.ts` ports `BoardView.swift` to Canvas 2D. Draw order is load-bearing, since each
+pass paints over the last: cell fills and digits, then the thin grid, then opaque won-section fills
+that hide the digits under them, then the heavy grid, then the final strike bar. Colours in
+`colors.ts` come from `MyColors.swift`.
+
+`src/ui/app.ts` owns the undo stack and talks to the worker. The search runs in
+`src/worker/aiWorker.ts` — the original ran it on the main thread, which is why its activity spinner
+could never animate. Replies carry a `seq`; a search cannot be cancelled, so a reply whose `seq` is
+stale (New Game or Undo happened meanwhile) is discarded on arrival.
