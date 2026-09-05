@@ -97,11 +97,27 @@ Engine correctness is established by playing engines against each other, not by 
 ## UI
 
 `src/ui/boardView.ts` ports `BoardView.swift` to Canvas 2D. Draw order is load-bearing, since each
-pass paints over the last: cell fills and digits, then the thin grid, then opaque won-section fills
-that hide the digits under them, then the heavy grid, then the final strike bar. Colours in
+pass paints over the last: cell fills, then cell digits, then the thin grid, then opaque won-section
+fills that hide the digits under them, then the heavy grid, then the final strike bar. Fills and
+digits are separate passes over the whole board rather than a fill-then-write per cell, because the
+hints cross-fade puts two digits in one cell and a second fill would erase the first. Colours in
 `colors.ts` come from `MyColors.swift`.
 
-`src/ui/app.ts` owns the undo stack and talks to the worker. The search runs in
+`src/ui/animation.ts` animates moves. `render()` stays a pure repaint from state: a frame is a
+position plus an optional `MoveProgress`, which carries the diff against the previous position and a
+few 0..1 stage values, and the view interpolates towards the picture it would have drawn anyway.
+Passing no progress draws exactly that picture, so the board at rest is unchanged. The stages overlap
+and a quiet move is over in 300ms; only taking a section (430ms) and winning (850ms) run longer.
+
+`MoveAnimator` queues moves rather than letting them interrupt each other, because the engine replies
+from a worker and at level 1 its move lands while yours is still in the air. Everything that is not a
+move — New Game, Undo, a resize, a palette change — cuts straight to the position, as does
+`prefers-reduced-motion`. A click during a move only cuts it short; the move itself takes a second
+click, since the board you pressed on is not the one you would be moving on.
+
+`src/ui/app.ts` owns the undo stack and talks to the worker. It works on the live position and lets
+the animator catch the screen up to it, so a search starts while the move that prompted it is still
+playing. The search runs in
 `src/worker/aiWorker.ts` — the original ran it on the main thread, which is why its activity spinner
 could never animate. Replies carry a `seq`; a search cannot be cancelled, so a reply whose `seq` is
 stale (New Game or Undo happened meanwhile) is discarded on arrival.
